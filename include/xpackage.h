@@ -8,6 +8,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <unordered_map>
 #include <set>
 
 namespace xpckg
@@ -67,4 +68,6 @@ namespace xpckg
 	};
 }
 
+#include "simdjson.h"
+#include "proximaflake.h"
 #include "xpackage_manager.h"

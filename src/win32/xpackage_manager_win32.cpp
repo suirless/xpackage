@@ -7,10 +7,38 @@
 *********************************************************/
 #include "xpackage.h"
 #include <windows.h>
+#include "zlib.h"
+#include <zipper/unzipper.h>
+#include <zipper/zipper.h>
+
+#define CHUNK_SIZE 4096
 
 namespace xpckg
 {
-	bool FileHandle::IsInvalid()
+	std::unordered_map<std::string, PackageBinaries> BinaryPlatformsMap = {
+		{ "win_x86", PackageBinaries::BinariesWindows_x86 },
+		{ "win_x64", PackageBinaries::BinariesWindows_x64 },
+		{ "win_arm64", PackageBinaries::BinariesWindows_ARM64},
+		{ "macOS_x86", PackageBinaries::BinariesMacOS_x86 },
+		{ "macOS_x64", PackageBinaries::BinariesMacOS_x64 },
+		{ "macOS_arm64", PackageBinaries::BinariesMacOS_ARM64 },
+		{ "macOS_uni_x64_arm", PackageBinaries::UniversalMacOS_x64_ARM64 },
+		{ "macOS_uni_x64_x86" , PackageBinaries::UniversalMacOS_x64_x86 }
+	};
+
+	std::unordered_map<PackageBinaries, std::string> PlatformsStringMap = {
+		{ PackageBinaries::BinariesWindows_x86, "win_x86" },
+		{ PackageBinaries::BinariesWindows_x64, "win_x64" },
+		{ PackageBinaries::BinariesWindows_ARM64, "win_arm64" },
+		{ PackageBinaries::BinariesMacOS_x86, "macOS_x86" },
+		{ PackageBinaries::BinariesMacOS_x64, "macOS_x64" },
+		{ PackageBinaries::BinariesMacOS_ARM64, "macOS_arm64" },
+		{ PackageBinaries::UniversalMacOS_x64_ARM64, "macOS_uni_x64_arm" },
+		{ PackageBinaries::UniversalMacOS_x64_x86, "macOS_uni_x64_x86" }
+	};
+
+	bool 
+	FileHandle::IsInvalid()
 	{
 		return (CurrentHandle == INVALID_HANDLE_VALUE || CurrentHandle == nullptr);
 	}
@@ -46,32 +74,32 @@ namespace xpckg
 	}
 
 	std::string
-		FileHandle::GetFileName()
+	FileHandle::GetFileName()
 	{
 		return SplitName(FileName);
 	}
 
 	std::string
-		FileHandle::GetFileExtension()
+	FileHandle::GetFileExtension()
 	{
 		return SplitExtension(FileName);
 	}
 
 
 	xpckg::RawHandle
-		FileHandle::GetRawPointer()
+	FileHandle::GetRawPointer()
 	{
 		return CurrentHandle;
 	}
 
 	size_t
-		FileHandle::GetFileSize()
+	FileHandle::GetFileSize()
 	{
 		return FileSize;
 	}
 
-	bool
-		FileHandle::ReadFromFile(std::shared_ptr<std::vector<uint8_t>> OutMemory, size_t SizeToRead)
+	size_t
+	FileHandle::ReadFromFile(std::shared_ptr<std::vector<uint8_t>> OutMemory, size_t SizeToRead)
 	{
 		if (OutMemory->size() < SizeToRead) {
 			OutMemory->resize(SizeToRead);
@@ -79,47 +107,47 @@ namespace xpckg
 
 		DWORD readedSize = 0;
 		if (!ReadFile(CurrentHandle, OutMemory->data(), SizeToRead, &readedSize, nullptr)) {
-			return false;
+			return -1;
 		}
 
-		return true;
+		return readedSize;
 	}
 
-	bool
-		FileHandle::ReadFromFile(void* OutMemory, size_t SizeToRead)
+	size_t
+	FileHandle::ReadFromFile(void* OutMemory, size_t SizeToRead)
 	{
 		DWORD readedSize = 0;
 		if (!ReadFile(CurrentHandle, OutMemory, SizeToRead, &readedSize, nullptr)) {
-			return false;
+			return -1;
 		}
 
-		return true;
+		return readedSize;
 	}
 
-	bool
-		FileHandle::WriteToFile(std::shared_ptr<std::vector<uint8_t>> InMemory)
+	size_t
+	FileHandle::WriteToFile(std::shared_ptr<std::vector<uint8_t>> InMemory)
 	{
 		DWORD writedSize = 0;
 		if (!WriteFile(CurrentHandle, InMemory->data(), InMemory->size(), &writedSize, nullptr)) {
-			return false;
+			return -1;
 		}
 
-		return true;
+		return writedSize;
 	}
 
-	bool
-		FileHandle::WriteToFile(void* InMemory, size_t SizeToWrite)
+	size_t
+	FileHandle::WriteToFile(void* InMemory, size_t SizeToWrite)
 	{
 		DWORD writedSize = 0;
 		if (!WriteFile(CurrentHandle, InMemory, SizeToWrite, &writedSize, nullptr)) {
-			return false;
+			return -1;
 		}
 
-		return true;
+		return writedSize;
 	}
 
 	bool
-		FileHandle::SeekFile(size_t FilePosition)
+	FileHandle::SeekFile(size_t FilePosition)
 	{
 		LARGE_INTEGER largeNumber = {};
 		largeNumber.QuadPart = FilePosition;
@@ -136,9 +164,78 @@ namespace xpckg
 		return true;
 	}
 
+
+	Package::Package(std::shared_ptr<zipper::Unzipper> ZipFile, std::shared_ptr<simdjson::dom::element> jsonElem)
+	{
+		PackageZip = ZipFile;
+		PackageJson = jsonElem;
+	}
+
+	Package::~Package()
+	{
+
+	}
+
+	PackageInformation
+	Package::GetPackageInformation()
+	{
+		return PackageInformation();
+	}
+
+	std::list<std::vector<uint8_t>>
+	Package::GetPlatformBinary(xpckg::PackageBinaries BinaryType)
+	{
+		std::list<std::vector<uint8_t>> ret;
+		try {
+			auto PackagesList = GetInstallPackageName(BinaryType);
+
+			for (auto elemPackage : PackagesList) {
+				ret.push_back({});
+				PackageZip->extractEntryToMemory(elemPackage, *ret.end());
+			}
+		}
+		catch (...) {
+			return ret;
+		}
+
+		return ret;
+	}
+
+	std::list<std::string>
+	Package::GetInstallPackageName(xpckg::PackageBinaries BinaryType)
+	{
+		std::list<std::string> ret;
+		
+		try {
+			std::string PlatformString = PlatformsStringMap[BinaryType];
+			auto PackagesPaths = (*PackageJson)["platforms"];
+			if (!PackagesPaths.is_object()) {
+				return ret;
+			}
+
+			auto PathsArray = PackagesPaths.at_key(PlatformString);
+			if (PathsArray.error() || !PathsArray.is_array()) {
+				return ret;
+			}
+
+			auto elemArray = PathsArray.get_array();
+			for (auto elem : elemArray) {
+				ret.push_back(elem.get_c_str().first);
+			}
+		}
+		catch (...) {
+			return ret;
+		}
+
+		return ret;
+	}
+
+
 	PackageManager::PackageManager(std::string PathToConfig)
 	{
-		ConfigHandle = std::make_shared<FilePointer>(PathToConfig);
+		if (!PathToConfig.empty()) {
+			ConfigHandle = std::make_shared<FileHandle>(PathToConfig, false);
+		}
 	}
 
 	PackageManager::~PackageManager()
@@ -146,31 +243,119 @@ namespace xpckg
 
 	}
 
-	PackagePointer 
-	PackageManager::OpenPackage(std::string PathToFile)
+	bool 
+	PackageManager::UnpackFile(std::vector<uint8_t>& UnpackedData, FilePointer PackageHandle)
 	{
-		if (PathToFile.empty()) {
-			return nullptr;
+		uint8_t InputBuffer[CHUNK_SIZE];
+		uint8_t OutputBuffer[CHUNK_SIZE];
+		z_stream stream = { 0 };
+		if (!PackageHandle) {
+			return false;
+		}
+
+		int result = inflateInit(&stream);
+		if (result != Z_OK) {
+			return false;
+		}
+
+		while (result != Z_STREAM_END) {
+			size_t ReturnSize = PackageHandle->ReadFromFile(InputBuffer, CHUNK_SIZE);
+			if (ReturnSize == -1) {
+				inflateEnd(&stream);
+				return false;
+			}
+
+			if (ReturnSize == 0) {
+				break;
+			}
+
+			stream.next_in = InputBuffer;
+			while (stream.avail_out == 0) {
+				stream.avail_out = CHUNK_SIZE;
+				stream.next_out = OutputBuffer;
+				result = inflate(&stream, Z_NO_FLUSH);
+				if (result == Z_NEED_DICT || result == Z_DATA_ERROR || result == Z_MEM_ERROR) {
+					inflateEnd(&stream);
+					return false;
+				}
+
+				uint32_t nbytes = CHUNK_SIZE - stream.avail_out;
+				UnpackedData.reserve(UnpackedData.size() + nbytes);
+				for (size_t i = 0; i < nbytes; i++) {
+					UnpackedData.push_back(OutputBuffer[i]);
+				}
+			}
+		}
+
+		inflateEnd(&stream);
+		return result == Z_STREAM_END;
+	}
+
+	bool
+	PackageManager::UnzipFile(FilePointer ZipPointer, std::shared_ptr<zipper::Unzipper>& UnzippedData)
+	{
+		std::vector<uint8_t> dataToRead;
+		dataToRead.resize(ZipPointer->GetFileSize());
+		if (ZipPointer->ReadFromFile(dataToRead.data(), dataToRead.size()) == -1) {
+			return false;
 		}
 
 		try {
-			PackagePointer ReturnPackage = std::make_shared<Package>(PathToFile);
-			return ReturnPackage;
-		} catch (std::exception& exc) {
-			return nullptr;
+			UnzippedData = std::make_shared<zipper::Unzipper>(dataToRead);
 		}
+		catch (...) {
+			return false;
+		}
+
+		return true;
+	}
+
+
+	bool 
+	PackageManager::ParseJson(
+		std::shared_ptr<simdjson::dom::element>& ParsedElement,
+		std::vector<uint8_t>& UnpackedData
+	)
+	{
+		simdjson::dom::parser parser;
+		simdjson::dom::element elem;
+
+		try {
+			elem = parser.parse(UnpackedData.data(), UnpackedData.size());
+		}
+		catch (...) {
+			return false;
+		}
+
+		if (!elem.is_object()) {
+			return false;
+		}
+
+		auto PluginId = elem["id"];
+		if (PluginId.error() || !PluginId.is_uint64()) {
+			return false;
+		}
+
+		CProximaFlake baseflake(PluginId.get_uint64());
+		if (baseflake.GetObjectType() != CProximaFlake::ObjectType::PackageObject) {
+			return false;
+		}
+
+		ParsedElement = std::make_shared<simdjson::dom::element>(elem);
+		return true;
 	}
 
 	bool 
 	PackageManager::OpenFilePackage(FilePointer& OutPointer, std::string PathToFile)
 	{
 		try {
-			OutPointer = std::make_shared<FileHandle>(PathToFile);
-			return true;
+			OutPointer = std::make_shared<FileHandle>(PathToFile, false);
 		}
 		catch (...) {
 			return false;
 		}
+
+		return true;
 	}
 
 	bool
@@ -192,11 +377,15 @@ namespace xpckg
 	}
 
 	PackageManager::ReturnCodes
-	PackageManager::InstallPackage(std::string PathToPackage, xpckg::PackageBinaries BinaryType, PackagePointer PackageToInstall, PackageCallback CustomCallback)
+	PackageManager::InstallPackage(PackageInfo PathToPackage, xpckg::PackageBinaries BinaryType, PackagePointer PackageToInstall, PackageCallback CustomCallback)
 	{
-		auto PackageBinary = PackageToInstall->GetPlatformBinary(BinaryType);
+		std::shared_ptr<zipper::Unzipper> outZipper;
+		std::shared_ptr<simdjson::dom::element> outElem;
+		std::string PackageJsonName = "package.json";
+		std::vector<uint8_t> TempReader;
 		FilePointer PackageOutFile;
-		if (!OpenFilePackage(PackageOutFile, PathToPackage)) {
+
+		if (!OpenFilePackage(PackageOutFile, PathToPackage.SourceDirectory)) {
 			if (!IsElevatedProcess() && GetLastError() == ERROR_ACCESS_DENIED) {
 				return ReturnCodes::PromoteToAdmin;
 			}
@@ -204,13 +393,48 @@ namespace xpckg
 			return ReturnCodes::OtherError;
 		}
 
+		if (!UnzipFile(PackageOutFile, outZipper)) {
+			return ReturnCodes::PackageDamaged;
+		}
+
+		bool IsFounded = false;
+		for (auto entry : outZipper->entries()) {
+			if (!entry.name.compare(PackageJsonName)) {
+				IsFounded = true;
+			}
+		}
+
+		if (!IsFounded) {
+			return ReturnCodes::IsNotPackage;
+		}
+
+		if (!outZipper->extractEntryToMemory(PackageJsonName, TempReader)) {
+			return ReturnCodes::PackageDamaged;
+		}
+
+		if (!ParseJson(outElem, TempReader)) {
+			return ReturnCodes::JsonDamaged;
+		}
+
+		if (PackageToInstall == nullptr) {
+			PackageToInstall = std::make_shared<Package>(outZipper, outElem);
+		}
+
+		auto ListOfPackages = PackageToInstall->GetInstallPackageName(BinaryType);
+		auto ListOfBinaries = PackageToInstall->GetPlatformBinary(BinaryType);
+		if (ListOfPackages.empty() || ListOfBinaries.empty()) {
+			return ReturnCodes::PackageDamaged;
+		}
+
+
+
 		return ReturnCodes::NoError;
 	}
 
 	PackageManager::ReturnCodes
-	PackageManager::DeletePackage(std::string PackageId, xpckg::PackageBinaries BinaryType, DeleteCallback CustomCallback)
+	PackageManager::DeletePackage(PackageInfo PathToPackage, xpckg::PackageBinaries BinaryType, DeleteCallback CustomCallback)
 	{
-
+		return ReturnCodes::NoError;
 	}
 
 

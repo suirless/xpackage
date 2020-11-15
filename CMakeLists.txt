@@ -54,9 +54,20 @@ else()
 
     include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/zlib)
     set(ZLIB_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/zlib)
+    set(ZLIB_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/deps/zlib)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/deps/zlib)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/deps/libpng)
 endif()
+
+git_clone(
+    PROJECT_NAME    zipper
+    GIT_URL         https://github.com/suirless/zipper.git
+    GIT_BRANCH      master
+    DIRECTORY       ${CMAKE_CURRENT_SOURCE_DIR}/deps
+)
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/deps/zipper)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/zipper/zipper)
 
 file(GLOB XPACKAGE_BASE_SRC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.h
@@ -86,5 +97,6 @@ file(GLOB XPACKAGE_SRC
 )
 
 add_library(xpackage STATIC ${XPACKAGE_SRC})
+target_include_directories(xpackage PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/deps/simdjson)
 target_include_directories(xpackage PUBLIC ${XPACKAGE_INCLUDE_DIR})
-target_link_libraries(xpackage PUBLIC png_static zlib simdjson)
+target_link_libraries(xpackage PUBLIC png_static zlib simdjson staticZipper)
