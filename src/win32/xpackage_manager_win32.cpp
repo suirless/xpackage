@@ -247,8 +247,8 @@ namespace xpckg
 	bool 
 	PackageManager::UnpackFile(std::vector<uint8_t>& UnpackedData, FilePointer PackageHandle)
 	{
-		uint8_t InputBuffer[CHUNK_SIZE];
-		uint8_t OutputBuffer[CHUNK_SIZE];
+		uint8_t InputBuffer[CHUNK_SIZE] = {};
+		uint8_t OutputBuffer[CHUNK_SIZE] = {};
 		z_stream stream = { 0 };
 		if (!PackageHandle) {
 			return false;
@@ -386,6 +386,29 @@ namespace xpckg
 		std::vector<uint8_t> TempReader;
 		FilePointer PackageOutFile;
 
+		/* Create lambda for delete duplicate code for deleting folders */
+		auto RemoveDirs = [this](wchar_t* StaticSymlinkString) -> PackageManager::ReturnCodes {
+			/* 
+				"RemoveDirectoryW()" function needy only for non-recursive folders deleting. To process
+				more complex solution we must use "SHFileOperationW()" function with `FO_DELETE` argument.
+				Also, we must select flag for silent install because user can cancel operation.
+			*/
+			if (!RemoveDirectoryW(StaticSymlinkString)) {
+				SHFILEOPSTRUCTW ShellOperation = { nullptr, FO_DELETE, StaticSymlinkString, nullptr, FOF_SILENT | FOF_NOERRORUI | FOF_NOCONFIRMATION, FALSE, nullptr, nullptr };
+				if (!SHFileOperationW(&ShellOperation)) {
+					DWORD Error = GetLastError();
+					if (!IsElevatedProcess() && Error == ERROR_ACCESS_DENIED) {
+						return ReturnCodes::PromoteToAdmin;
+					}
+
+					return ReturnCodes::OtherError;
+				}
+			}
+
+			ReturnCodes::NoError;
+		};
+
+		/* Open file handle to ZIP archive of package */
 		if (!OpenFilePackage(PackageOutFile, PathToPackage.SourceDirectory)) {
 			if (!IsElevatedProcess() && GetLastError() == ERROR_ACCESS_DENIED) {
 				return ReturnCodes::PromoteToAdmin;
@@ -394,10 +417,12 @@ namespace xpckg
 			return ReturnCodes::OtherError;
 		}
 
+		/* Unzip (and unpack in future) package to process data */
 		if (!UnzipFile(PackageOutFile, outZipper)) {
 			return ReturnCodes::PackageDamaged;
 		}
 
+		/* Try to find "package.json" file to process information about package */
 		bool IsFounded = false;
 		for (auto& entry : outZipper->entries()) {
 			if (!entry.name.compare(PackageJsonName)) {
@@ -421,11 +446,76 @@ namespace xpckg
 			PackageToInstall = std::make_shared<Package>(outZipper, outElem);
 		}
 
+		/* Try to get full list of plugins and binaries */
 		std::list<std::pair<std::vector<uint8_t>, std::string>> BinariesList;
 		if (!PackageToInstall->GetPlatformBinary(BinaryType, BinariesList) || BinariesList.empty()) {
 			return ReturnCodes::PackageDamaged;
 		}
 
+		/* Splil full path to string and convert to wide char */
+		std::string FullPluginDir = PathToPackage.InstallDirectory + "\\" + PathToPackage.CompanyName + "\\" + PathToPackage.PluginName;
+		wchar_t StaticPluginString[2048] = {};
+		if (MultiByteToWideChar(CP_UTF8, 0, FullPluginDir.c_str(), -1, StaticPluginString, ARRAYSIZE(StaticPluginString)) <= 0) {
+			return ReturnCodes::OtherError;
+		}
+
+		/* Check for full path to plugin */
+		DWORD dwAttrib = GetFileAttributesW(StaticPluginString);
+		if (dwAttrib == INVALID_FILE_ATTRIBUTES) {
+			/* If doesn't exist - check for install folder */
+			FullPluginDir = PathToPackage.InstallDirectory;
+			if (MultiByteToWideChar(CP_UTF8, 0, FullPluginDir.c_str(), -1, StaticPluginString, ARRAYSIZE(StaticPluginString)) <= 0) {
+				return ReturnCodes::OtherError;
+			}
+
+			/* If install folder isn't exist - create it. */
+			dwAttrib = GetFileAttributesW(StaticPluginString);
+			if (dwAttrib == INVALID_FILE_ATTRIBUTES) {
+				if (!CreateDirectoryW(StaticPluginString, nullptr)) {
+					return ReturnCodes::IoFailed;
+				}
+			}
+
+			/* Also check for company folder */
+			FullPluginDir = PathToPackage.InstallDirectory + "\\" + PathToPackage.CompanyName;
+			if (MultiByteToWideChar(CP_UTF8, 0, FullPluginDir.c_str(), -1, StaticPluginString, ARRAYSIZE(StaticPluginString)) <= 0) {
+				return ReturnCodes::OtherError;
+			}
+
+			/* Create company folder if it doesn't exist */
+			dwAttrib = GetFileAttributesW(StaticPluginString);
+			if (dwAttrib == INVALID_FILE_ATTRIBUTES) { 
+				if (!CreateDirectoryW(StaticPluginString, nullptr)) {
+					return ReturnCodes::IoFailed;
+				}
+			}
+
+			/* Also check for plugin folder */
+			FullPluginDir = PathToPackage.InstallDirectory + "\\" + PathToPackage.CompanyName + "\\" + PathToPackage.PluginName;
+			if (MultiByteToWideChar(CP_UTF8, 0, FullPluginDir.c_str(), -1, StaticPluginString, ARRAYSIZE(StaticPluginString)) <= 0) {
+				return ReturnCodes::OtherError;
+			}
+
+			/* Create plugin folder if it doesn't exist */
+			dwAttrib = GetFileAttributesW(StaticPluginString);
+			if (dwAttrib == INVALID_FILE_ATTRIBUTES) {
+				if (!CreateDirectoryW(StaticPluginString, nullptr)) {
+					return ReturnCodes::IoFailed;
+				}
+			}
+
+		} else if (!(dwAttrib & FILE_ATTRIBUTE_DIRECTORY)) {
+			/* Okey, it's file and we must delete it. Try to do it. */
+			if (!DeleteFileW(StaticPluginString)) {
+				return ReturnCodes::IoFailed;
+			}
+
+			if (!CreateDirectoryW(StaticPluginString, nullptr)) {
+				return ReturnCodes::IoFailed;
+			}
+		}
+
+		/* Try to create and flush binaries data to files on install directory */
 		for (auto& elem : BinariesList) {
 			std::string FullPathToObject = PathToPackage.InstallDirectory + "\\" + PathToPackage.CompanyName + "\\" + PathToPackage.PluginName + "\\" + elem.second;
 			FileHandle ThisFile = FileHandle(FullPathToObject, true);
@@ -434,44 +524,47 @@ namespace xpckg
 			}
 		}
 
+		/* Convert UTF-8 symlink path to UTF-16 */
 		std::string FullSymlink = PathToPackage.SymlinkDirectory + "\\" + PathToPackage.CompanyName + "\\" + PathToPackage.PluginName;
-		std::string FullPluginDir = PathToPackage.InstallDirectory + "\\" + PathToPackage.CompanyName + "\\" + PathToPackage.PluginName;
 		wchar_t StaticSymlinkString[2048] = {};
-		wchar_t StaticPluginString[2048] = {};
 		if (MultiByteToWideChar(CP_UTF8, 0, FullSymlink.c_str(), -1, StaticSymlinkString, ARRAYSIZE(StaticSymlinkString)) <= 0) {
+			RemoveDirs(StaticPluginString);
 			return ReturnCodes::OtherError;
 		}
 
-		if (MultiByteToWideChar(CP_UTF8, 0, FullPluginDir.c_str(), -1, StaticPluginString, ARRAYSIZE(StaticPluginString)) <= 0) {
-			return ReturnCodes::OtherError;
-		}
-
-		DWORD dwAttrib = GetFileAttributesW(StaticSymlinkString);
+		/* 
+			Check for already exist folder on symlink folder path. We must delete this symlink/folder 
+			anyway to create new symlink
+		*/
+		dwAttrib = GetFileAttributesW(StaticSymlinkString);
 		if (dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY)) {
-			if (!RemoveDirectoryW(StaticSymlinkString)) {
-				SHFILEOPSTRUCTW ShellOperation = { nullptr, FO_DELETE, StaticSymlinkString, nullptr, FOF_SILENT | FOF_NOERRORUI | FOF_NOCONFIRMATION, FALSE, nullptr, nullptr  };
-				if (!SHFileOperationW(&ShellOperation)) {
-					DWORD Error = GetLastError();
-					if (!IsElevatedProcess() && Error == ERROR_ACCESS_DENIED) {
-						return ReturnCodes::PromoteToAdmin;
-					}
-
-					return ReturnCodes::OtherError;
-				}
+			auto ret = RemoveDirs(StaticSymlinkString);
+			if (ret != ReturnCodes::NoError) {
+				RemoveDirs(StaticPluginString);
+				return ret;
 			}
 		}
 
+		/* Create symlink to installation path of package and process it */
 		if (!CreateSymbolicLinkW(StaticSymlinkString, StaticPluginString, SYMBOLIC_LINK_FLAG_DIRECTORY)) {
 			DWORD Error = GetLastError();
+			ReturnCodes ReturnValue = ReturnCodes::NoError;
 			if (!IsElevatedProcess() && Error == ERROR_ACCESS_DENIED) {
-				return ReturnCodes::PromoteToAdmin;
+				ReturnValue = ReturnCodes::PromoteToAdmin;
+			} else {
+				ReturnValue = ReturnCodes::OtherError;
 			}
 
-			return ReturnCodes::OtherError;
+			RemoveDirs(StaticPluginString);
+			RemoveDirs(StaticSymlinkString);
+			return ReturnValue;
 		}
 
+		/* Custom process callback from plugin's company holder */
 		if (CustomCallback) {
 			if (!CustomCallback(&PathToPackage, BinaryType)) {
+				RemoveDirs(StaticPluginString);
+				RemoveDirs(StaticSymlinkString);
 				return ReturnCodes::AfterInstallationOperationFailed;
 			}
 		}
