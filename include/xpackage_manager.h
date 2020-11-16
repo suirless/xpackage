@@ -76,13 +76,13 @@ namespace xpckg
 		~Package();
 
 		PackageInformation GetPackageInformation();
-		std::list<std::vector<uint8_t>> GetPlatformBinary(xpckg::PackageBinaries BinaryType);
-		std::list<std::string> GetInstallPackageName(xpckg::PackageBinaries BinaryType);
+		bool GetPlatformBinary(xpckg::PackageBinaries BinaryType, std::list<std::pair<std::vector<uint8_t>, std::string>>& BinariesList);
+		bool GetInstallPackageName(xpckg::PackageBinaries BinaryType, std::list<std::string>& PathsList);
 	};
 
 	using PackagePointer = std::shared_ptr<Package>;
-	typedef bool(PackageCallback)(PackageInfo* HandleOfPackage);
-	typedef bool(DeleteCallback)(PackageInfo* HandleOfPackage);
+	typedef bool(PackageCallback)(PackageInfo* PathToPackage, xpckg::PackageBinaries BinaryType);
+	typedef bool(DeleteCallback)(PackageInfo* HandleOfPackage, xpckg::PackageBinaries BinaryType);
 
 	class PackageManager
 	{
@@ -103,13 +103,15 @@ namespace xpckg
 			PackageDamaged,
 			JsonDamaged,
 			IsNotPackage,
+			IoFailed,
+			AfterInstallationOperationFailed,
 			OtherError
 		};
 
 		PackageManager(std::string PathToConfig);
 		~PackageManager();
 
-		ReturnCodes InstallPackage(PackageInfo PathToPackage, xpckg::PackageBinaries BinaryType, PackagePointer PackageToInstall, PackageCallback CustomCallback);
-		ReturnCodes DeletePackage(PackageInfo PackageId, xpckg::PackageBinaries BinaryType, DeleteCallback CustomCallback);
+		ReturnCodes InstallPackage(PackageInfo PathToPackage, xpckg::PackageBinaries BinaryType, PackagePointer PackageToInstall, PackageCallback CustomCallback = nullptr);
+		ReturnCodes DeletePackage(PackageInfo PackageId, xpckg::PackageBinaries BinaryType, DeleteCallback CustomCallback = nullptr);
 	};
 }

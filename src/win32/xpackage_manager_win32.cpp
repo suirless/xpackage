@@ -182,52 +182,53 @@ namespace xpckg
 		return PackageInformation();
 	}
 
-	std::list<std::vector<uint8_t>>
-	Package::GetPlatformBinary(xpckg::PackageBinaries BinaryType)
+	bool
+	Package::GetPlatformBinary(xpckg::PackageBinaries BinaryType, std::list<std::pair<std::vector<uint8_t>, std::string>>& BinariesList)
 	{
-		std::list<std::vector<uint8_t>> ret;
 		try {
-			auto PackagesList = GetInstallPackageName(BinaryType);
+			std::list<std::string> PathsList;
+			if (!GetInstallPackageName(BinaryType, PathsList)) {
+				return false;
+			}
 
-			for (auto elemPackage : PackagesList) {
-				ret.push_back({});
-				PackageZip->extractEntryToMemory(elemPackage, *ret.end());
+			for (auto elemPackage : PathsList) {
+				BinariesList.push_back({ {}, elemPackage });
+				PackageZip->extractEntryToMemory(elemPackage, BinariesList.end()->first);
 			}
 		}
 		catch (...) {
-			return ret;
+			return false;
 		}
 
-		return ret;
+		return true;
 	}
 
-	std::list<std::string>
-	Package::GetInstallPackageName(xpckg::PackageBinaries BinaryType)
+	bool
+	Package::GetInstallPackageName(xpckg::PackageBinaries BinaryType, std::list<std::string>& PathsList)
 	{
-		std::list<std::string> ret;
 		
 		try {
 			std::string PlatformString = PlatformsStringMap[BinaryType];
 			auto PackagesPaths = (*PackageJson)["platforms"];
 			if (!PackagesPaths.is_object()) {
-				return ret;
+				return false;
 			}
 
 			auto PathsArray = PackagesPaths.at_key(PlatformString);
 			if (PathsArray.error() || !PathsArray.is_array()) {
-				return ret;
+				return false;
 			}
 
 			auto elemArray = PathsArray.get_array();
 			for (auto elem : elemArray) {
-				ret.push_back(elem.get_c_str().first);
+				PathsList.push_back(elem.get_c_str().first);
 			}
 		}
 		catch (...) {
-			return ret;
+			return false;
 		}
 
-		return ret;
+		return false;
 	}
 
 
@@ -398,7 +399,7 @@ namespace xpckg
 		}
 
 		bool IsFounded = false;
-		for (auto entry : outZipper->entries()) {
+		for (auto& entry : outZipper->entries()) {
 			if (!entry.name.compare(PackageJsonName)) {
 				IsFounded = true;
 			}
@@ -420,13 +421,60 @@ namespace xpckg
 			PackageToInstall = std::make_shared<Package>(outZipper, outElem);
 		}
 
-		auto ListOfPackages = PackageToInstall->GetInstallPackageName(BinaryType);
-		auto ListOfBinaries = PackageToInstall->GetPlatformBinary(BinaryType);
-		if (ListOfPackages.empty() || ListOfBinaries.empty()) {
+		std::list<std::pair<std::vector<uint8_t>, std::string>> BinariesList;
+		if (!PackageToInstall->GetPlatformBinary(BinaryType, BinariesList) || BinariesList.empty()) {
 			return ReturnCodes::PackageDamaged;
 		}
 
+		for (auto& elem : BinariesList) {
+			std::string FullPathToObject = PathToPackage.InstallDirectory + "\\" + PathToPackage.CompanyName + "\\" + PathToPackage.PluginName + "\\" + elem.second;
+			FileHandle ThisFile = FileHandle(FullPathToObject, true);
+			if (ThisFile.WriteToFile(elem.first.data(), elem.first.size()) == -1) {
+				return ReturnCodes::IoFailed;
+			}
+		}
 
+		std::string FullSymlink = PathToPackage.SymlinkDirectory + "\\" + PathToPackage.CompanyName + "\\" + PathToPackage.PluginName;
+		std::string FullPluginDir = PathToPackage.InstallDirectory + "\\" + PathToPackage.CompanyName + "\\" + PathToPackage.PluginName;
+		wchar_t StaticSymlinkString[2048] = {};
+		wchar_t StaticPluginString[2048] = {};
+		if (MultiByteToWideChar(CP_UTF8, 0, FullSymlink.c_str(), -1, StaticSymlinkString, ARRAYSIZE(StaticSymlinkString)) <= 0) {
+			return ReturnCodes::OtherError;
+		}
+
+		if (MultiByteToWideChar(CP_UTF8, 0, FullPluginDir.c_str(), -1, StaticPluginString, ARRAYSIZE(StaticPluginString)) <= 0) {
+			return ReturnCodes::OtherError;
+		}
+
+		DWORD dwAttrib = GetFileAttributesW(StaticSymlinkString);
+		if (dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY)) {
+			if (!RemoveDirectoryW(StaticSymlinkString)) {
+				SHFILEOPSTRUCTW ShellOperation = { nullptr, FO_DELETE, StaticSymlinkString, nullptr, FOF_SILENT | FOF_NOERRORUI | FOF_NOCONFIRMATION, FALSE, nullptr, nullptr  };
+				if (!SHFileOperationW(&ShellOperation)) {
+					DWORD Error = GetLastError();
+					if (!IsElevatedProcess() && Error == ERROR_ACCESS_DENIED) {
+						return ReturnCodes::PromoteToAdmin;
+					}
+
+					return ReturnCodes::OtherError;
+				}
+			}
+		}
+
+		if (!CreateSymbolicLinkW(StaticSymlinkString, StaticPluginString, SYMBOLIC_LINK_FLAG_DIRECTORY)) {
+			DWORD Error = GetLastError();
+			if (!IsElevatedProcess() && Error == ERROR_ACCESS_DENIED) {
+				return ReturnCodes::PromoteToAdmin;
+			}
+
+			return ReturnCodes::OtherError;
+		}
+
+		if (CustomCallback) {
+			if (!CustomCallback(&PathToPackage, BinaryType)) {
+				return ReturnCodes::AfterInstallationOperationFailed;
+			}
+		}
 
 		return ReturnCodes::NoError;
 	}
@@ -436,6 +484,4 @@ namespace xpckg
 	{
 		return ReturnCodes::NoError;
 	}
-
-
 };
