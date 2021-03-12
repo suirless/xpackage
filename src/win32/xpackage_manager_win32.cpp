@@ -15,6 +15,15 @@
 
 namespace xpckg
 {
+	void ConvertToWindowsStyle(std::string& CurrentString)
+	{
+		for (auto& StringElem : CurrentString) {
+			if (StringElem == '/') {
+				StringElem = '\\';
+			}
+		}
+	}
+
 	std::unordered_map<std::string, PackageBinaries> BinaryPlatformsMap = {
 		{ "win_x86", PackageBinaries::BinariesWindows_x86 },
 		{ "win_x64", PackageBinaries::BinariesWindows_x64 },
@@ -192,8 +201,16 @@ namespace xpckg
 			}
 
 			for (auto elemPackage : PathsList) {
-				BinariesList.push_back({ {}, elemPackage });
-				PackageZip->extractEntryToMemory(elemPackage, BinariesList.end()->first);
+				std::string TempString = elemPackage;
+				ConvertToWindowsStyle(TempString);
+				BinariesList.push_back({ {}, TempString });
+
+				auto CurrentElem = BinariesList.end();
+				CurrentElem--;
+				if (!PackageZip->extractEntryToMemory(elemPackage, CurrentElem->first)) {
+					return false;
+				}
+
 			}
 		}
 		catch (...) {
@@ -209,26 +226,29 @@ namespace xpckg
 		
 		try {
 			std::string PlatformString = PlatformsStringMap[BinaryType];
-			auto PackagesPaths = (*PackageJson)["platforms"];
+			auto* valuePtr = PackageJson.get();
+			auto PackagesPaths = (*valuePtr)["platforms"];
+			auto elemType = PackagesPaths.type();
 			if (!PackagesPaths.is_object()) {
 				return false;
 			}
 
-			auto PathsArray = PackagesPaths.at_key(PlatformString);
-			if (PathsArray.error() || !PathsArray.is_array()) {
+			auto FoundedPlatformArrayObject = PackagesPaths[PlatformString];
+			if (!FoundedPlatformArrayObject.is_array()) {
 				return false;
 			}
 
-			auto elemArray = PathsArray.get_array();
-			for (auto elem : elemArray) {
-				PathsList.push_back(elem.get_c_str().first);
+			auto arrayPlatformList = FoundedPlatformArrayObject.get_array();
+			for (auto elem : arrayPlatformList) {
+				std::string tempString = elem.get_c_str().first;
+				PathsList.push_back(tempString);
 			}
 		}
 		catch (...) {
 			return false;
 		}
 
-		return false;
+		return true;
 	}
 
 
@@ -314,15 +334,15 @@ namespace xpckg
 
 	bool 
 	PackageManager::ParseJson(
-		std::shared_ptr<simdjson::dom::element>& ParsedElement,
+		std::shared_ptr<simdjson::dom::element>& ParsedElement, 
+		simdjson::dom::parser& customParser,
 		std::vector<uint8_t>& UnpackedData
 	)
 	{
-		simdjson::dom::parser parser;
 		simdjson::dom::element elem;
 
 		try {
-			elem = parser.parse(UnpackedData.data(), UnpackedData.size());
+			elem = customParser.parse(UnpackedData.data(), UnpackedData.size());
 		}
 		catch (...) {
 			return false;
@@ -338,9 +358,9 @@ namespace xpckg
 		}
 
 		CProximaFlake baseflake(PluginId.get_uint64());
-		if (baseflake.GetObjectType() != CProximaFlake::ObjectType::PackageObject) {
-			return false;
-		}
+		//if (baseflake.GetObjectType() != CProximaFlake::ObjectType::PackageObject) {
+		//	return false;
+		//}
 
 		ParsedElement = std::make_shared<simdjson::dom::element>(elem);
 		return true;
@@ -377,14 +397,30 @@ namespace xpckg
 		return IsElevated;
 	}
 
+
+	void
+	PackageManager::ConvertStringsToWindowsStyle(PackageInfo& packageInfo)
+	{
+		ConvertToWindowsStyle(packageInfo.InstallDirectory);
+		ConvertToWindowsStyle(packageInfo.SourceDirectory);
+		ConvertToWindowsStyle(packageInfo.SymlinkDirectory);
+	}
+
 	PackageManager::ReturnCodes
 	PackageManager::InstallPackage(PackageInfo PathToPackage, xpckg::PackageBinaries BinaryType, PackagePointer PackageToInstall, PackageCallback CustomCallback)
 	{
+		simdjson::dom::parser thisParser;
 		std::shared_ptr<zipper::Unzipper> outZipper;
 		std::shared_ptr<simdjson::dom::element> outElem;
 		std::string PackageJsonName = "package.json";
 		std::vector<uint8_t> TempReader;
 		FilePointer PackageOutFile;
+
+		if (!IsElevatedProcess()) {
+			return ReturnCodes::PromoteToAdmin;
+		}
+
+		ConvertStringsToWindowsStyle(PathToPackage);
 
 		/* Create lambda for delete duplicate code for deleting folders */
 		auto RemoveDirs = [this](wchar_t* StaticSymlinkString) -> PackageManager::ReturnCodes {
@@ -405,7 +441,7 @@ namespace xpckg
 				}
 			}
 
-			ReturnCodes::NoError;
+			return ReturnCodes::NoError;
 		};
 
 		/* Open file handle to ZIP archive of package */
@@ -417,7 +453,7 @@ namespace xpckg
 			return ReturnCodes::OtherError;
 		}
 
-		/* Unzip (and unpack in future) package to process data */
+		/* Unzip and unpack package to process data */
 		if (!UnzipFile(PackageOutFile, outZipper)) {
 			return ReturnCodes::PackageDamaged;
 		}
@@ -438,7 +474,7 @@ namespace xpckg
 			return ReturnCodes::PackageDamaged;
 		}
 
-		if (!ParseJson(outElem, TempReader)) {
+		if (!ParseJson(outElem, thisParser, TempReader)) {
 			return ReturnCodes::JsonDamaged;
 		}
 
@@ -506,8 +542,9 @@ namespace xpckg
 
 		} else if (!(dwAttrib & FILE_ATTRIBUTE_DIRECTORY)) {
 			/* Okey, it's file and we must delete it. Try to do it. */
-			if (!DeleteFileW(StaticPluginString)) {
-				return ReturnCodes::IoFailed;
+			auto DeleteReturn = RemoveDirs(StaticPluginString);
+			if (DeleteReturn != ReturnCodes::OtherError) {
+				return DeleteReturn;
 			}
 
 			if (!CreateDirectoryW(StaticPluginString, nullptr)) {
@@ -515,25 +552,108 @@ namespace xpckg
 			}
 		}
 
+		auto CreateCustomDirectory = [](std::string BaseDirectory, std::string& ParsedString) -> bool {
+			std::vector<std::string> SubdirsToCreate;
+
+			auto CreateDirIfNotExist = [](std::string& PathDir) -> bool {
+				wchar_t TempString[2048] = {};
+				if (MultiByteToWideChar(CP_UTF8, 0, PathDir.c_str(), -1, TempString, ARRAYSIZE(TempString)) <= 0) {
+					return false;
+				}
+
+				DWORD dwAttrib = GetFileAttributesW(TempString);
+				if (dwAttrib == INVALID_FILE_ATTRIBUTES) {
+					if (!CreateDirectoryW(TempString, nullptr)) {
+						return false;
+					}
+				}
+
+				return true;
+			};
+
+			size_t ElemSize = 0;
+			size_t IndexBegin = 0;
+			for (size_t i = 0; i < ParsedString.size(); i++) {
+				if ((ParsedString[i] == '\\') && ElemSize > 0) {
+					const char* PtrToString = &ParsedString[IndexBegin];
+					SubdirsToCreate.push_back(std::string(PtrToString, ElemSize));
+
+					IndexBegin = i + 1;
+					ElemSize = 0;
+					continue;
+				}
+
+				ElemSize++;
+			}
+
+			std::string NewPathToDir = BaseDirectory;
+			for (size_t o = 0; o < SubdirsToCreate.size(); o++) {
+				NewPathToDir += "\\";
+				NewPathToDir += SubdirsToCreate[o];
+				CreateDirIfNotExist(NewPathToDir);
+			}
+
+			return true;
+		};
+
 		/* Try to create and flush binaries data to files on install directory */
 		for (auto& elem : BinariesList) {
-			std::string FullPathToObject = PathToPackage.InstallDirectory + "\\" + PathToPackage.CompanyName + "\\" + PathToPackage.PluginName + "\\" + elem.second;
+			std::string FullPathToObject = PathToPackage.InstallDirectory + "\\" + PathToPackage.CompanyName + "\\" + PathToPackage.PluginName;
+			CreateCustomDirectory(FullPathToObject, elem.second);
+			FullPathToObject += "\\";
+			FullPathToObject += elem.second;
+
 			FileHandle ThisFile = FileHandle(FullPathToObject, true);
 			if (ThisFile.WriteToFile(elem.first.data(), elem.first.size()) == -1) {
 				return ReturnCodes::IoFailed;
 			}
 		}
 
+		wchar_t StaticSymlinkString[2048] = {};
+
+		std::string SymlinkCompanyDir = PathToPackage.SymlinkDirectory;
+		if (MultiByteToWideChar(CP_UTF8, 0, SymlinkCompanyDir.c_str(), -1, StaticSymlinkString, ARRAYSIZE(StaticSymlinkString)) <= 0) {
+			RemoveDirs(StaticPluginString);
+			return ReturnCodes::OtherError;
+		}
+
+		dwAttrib = GetFileAttributesW(StaticSymlinkString);
+		if (dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY)) {
+			RemoveDirs(StaticSymlinkString);
+		}
+
+		if (!CreateDirectoryW(StaticSymlinkString, nullptr)) {
+			return ReturnCodes::OtherError;
+		}
+
+		memset(StaticSymlinkString, 0, sizeof(StaticSymlinkString));
+
+		SymlinkCompanyDir = PathToPackage.SymlinkDirectory + "\\" + PathToPackage.CompanyName;
+		if (MultiByteToWideChar(CP_UTF8, 0, SymlinkCompanyDir.c_str(), -1, StaticSymlinkString, ARRAYSIZE(StaticSymlinkString)) <= 0) {
+			RemoveDirs(StaticPluginString);
+			return ReturnCodes::OtherError;
+		}
+
+		dwAttrib = GetFileAttributesW(StaticSymlinkString);
+		if (dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY)) {
+			RemoveDirs(StaticSymlinkString);
+		}
+
+		if (!CreateDirectoryW(StaticSymlinkString, nullptr)) {
+			return ReturnCodes::OtherError;
+		}
+
+		memset(StaticSymlinkString, 0, sizeof(StaticSymlinkString));
+
 		/* Convert UTF-8 symlink path to UTF-16 */
 		std::string FullSymlink = PathToPackage.SymlinkDirectory + "\\" + PathToPackage.CompanyName + "\\" + PathToPackage.PluginName;
-		wchar_t StaticSymlinkString[2048] = {};
 		if (MultiByteToWideChar(CP_UTF8, 0, FullSymlink.c_str(), -1, StaticSymlinkString, ARRAYSIZE(StaticSymlinkString)) <= 0) {
 			RemoveDirs(StaticPluginString);
 			return ReturnCodes::OtherError;
 		}
 
-		/* 
-			Check for already exist folder on symlink folder path. We must delete this symlink/folder 
+		/*
+			Check for already exist folder on symlink folder path. We must delete this symlink/folder
 			anyway to create new symlink
 		*/
 		dwAttrib = GetFileAttributesW(StaticSymlinkString);
@@ -549,7 +669,7 @@ namespace xpckg
 		if (!CreateSymbolicLinkW(StaticSymlinkString, StaticPluginString, SYMBOLIC_LINK_FLAG_DIRECTORY)) {
 			DWORD Error = GetLastError();
 			ReturnCodes ReturnValue = ReturnCodes::NoError;
-			if (!IsElevatedProcess() && Error == ERROR_ACCESS_DENIED) {
+			if (!IsElevatedProcess() && (Error == ERROR_ACCESS_DENIED || Error == ERROR_PRIVILEGE_NOT_HELD)) {
 				ReturnValue = ReturnCodes::PromoteToAdmin;
 			} else {
 				ReturnValue = ReturnCodes::OtherError;

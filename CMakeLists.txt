@@ -21,6 +21,8 @@ set(XPACKAGE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(XPACKAGE_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 set(SIMDJSON_JUST_LIBRARY ON)
 
+option(XPACKAGE_ENABLE_TESTS "Enable tests for XPackage" ON)
+
 if (MSVC)
     add_definitions(/D _CRT_SECURE_NO_WARNINGS)
 endif()
@@ -100,3 +102,8 @@ add_library(xpackage STATIC ${XPACKAGE_SRC})
 target_include_directories(xpackage PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/deps/simdjson)
 target_include_directories(xpackage PUBLIC ${XPACKAGE_INCLUDE_DIR})
 target_link_libraries(xpackage PUBLIC png_static zlib simdjson staticZipper)
+
+if (XPACKAGE_ENABLE_TESTS)
+    add_executable(xpackage-test ${CMAKE_CURRENT_SOURCE_DIR}/src/test/main.cpp)
+    target_link_libraries(xpackage-test xpackage)
+endif()

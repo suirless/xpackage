@@ -1,0 +1,4 @@
+{
+    "id": 0,
+    "platforms": { "win_x64": [ "bin/SuirlessDynation.dll" ] }
+}
