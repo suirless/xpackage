@@ -5,6 +5,7 @@
 ******************************************************************
 * Proxima flake impl.
 *****************************************************************/
+#pragma once
 #include <cstdio>
 #include <cstdlib>
 #include <cstdint>
@@ -41,7 +42,7 @@ public:
 	enum class ObjectType : uint64_t
 	{
 		// Base objects
-		NullObject = 0,			// No object, or unitialized
+		NullObject = 0,				// No object, or unitialized
 		BaseObject = 1,				// Base type for calculations, temp object, worker objects and other
 		SystemObject = 2,			// Used by worker machine only, needy for statistics
 		JSONObject = 3,				// Raw JSON data object, without context
@@ -63,7 +64,13 @@ public:
 		ArtistObject = 13,			// Extented block object with additional information and links
 		ProductObject = 14,			// Contains comments, images, descriptions and system info
 		RecommendationObject = 15,	// Exists only in recommendation page
-		UserObject = 16,				// User profile information
+		UserObject = 16,			// User profile information
+
+		// Enheep Advanced objects
+		BlockDescription = 17,
+		SoundObject = 18,
+		IndexPageObject = 19,
+		RecommendationPageObject = 20,
 
 		ExtentedObject = 63		// Used for more high level object types
 	};
