@@ -93,7 +93,9 @@ namespace xpckg
 		bool OpenFilePackage(FilePointer& OutPointer, std::string PathToFile);
 		bool UnpackFile(std::vector<uint8_t>& UnpackedData, FilePointer PackageHandle);
 		bool UnzipFile(FilePointer ZipPointer, std::shared_ptr<zipper::Unzipper>& UnzippedData);
-		bool ParseJson(std::shared_ptr<simdjson::dom::element>& ParsedElement, std::vector<uint8_t>& UnpackedData);
+		bool ParseJson(std::shared_ptr<simdjson::dom::element>& ParsedElement, simdjson::dom::parser& customParser, std::vector<uint8_t>& UnpackedData);
+
+		void ConvertStringsToWindowsStyle(PackageInfo& packageInfo);
 
 	public:
 		enum class ReturnCodes 

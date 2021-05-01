@@ -1,0 +1,16 @@
+BasedOnStyle: Google
+
+Language: Cpp
+# Force pointers to the type for C++.
+DerivePointerAlignment: false
+PointerAlignment: Left
+AlignOperands: true
+IndentWidth: 4
+TabWidth: 4
+UseTab: Always
+SpaceAfterTemplateKeyword: true
+SpaceAfterCStyleCast: false
+AlignAfterOpenBracket: Align
+AllowShortBlocksOnASingleLine: false
+CompactNamespaces: false
+NamespaceIndentation: All
