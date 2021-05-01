@@ -23,8 +23,8 @@ struct ProximaFlakeData
 {
 	uint64_t Timestamp : 39;		// Unix timestamp, 10ms (179 years life time)
 	uint64_t Sequence : 8;			// thread/process id
-	uint64_t MachineId : 13;		// machine id
-	uint64_t ObjectType : 4;		// check CProximaFlake::ObjectType
+	uint64_t MachineId : 11;		// machine id
+	uint64_t ObjectType : 6;		// check CProximaFlake::ObjectType
 };
 
 constexpr size_t FlakeSize = sizeof(ProximaFlakeData);
@@ -40,16 +40,32 @@ private:
 public:
 	enum class ObjectType : uint64_t
 	{
-		NullObject = 0,
-		SystemObject,
-		ProcessObject,
-		InternalObject,
-		BaseObject,
-		JSONObject,
-		MachineObject,
-		SuirlessObject,
-		PackageObject,
-		RequestObject
+		// Base objects
+		NullObject = 0,			// No object, or unitialized
+		BaseObject = 1,				// Base type for calculations, temp object, worker objects and other
+		SystemObject = 2,			// Used by worker machine only, needy for statistics
+		JSONObject = 3,				// Raw JSON data object, without context
+		DateObject = 4,				// Date object with history 
+		TimeObject = 5,				// Temp time object, for more accurate counting
+
+		// Andromeda objects
+		RequestObject = 6,			// Raw HTTP Request, or request to 3rd-party site
+		ImageObject = 7,			// PNG/WebP encoded image with context information
+		PackageObject = 8,			// Package object, data encoded as base64
+
+		// Enhepp Base objects
+		BlockObject = 9,			// Base block object for pages
+		DescriptionObject = 10,		// Description of block object, can contains image 
+		CommentObject = 11,			// Used for product object only
+		PriceObject = 12,			// Contains price for all available countries
+
+		// Enheep Context objects
+		ArtistObject = 13,			// Extented block object with additional information and links
+		ProductObject = 14,			// Contains comments, images, descriptions and system info
+		RecommendationObject = 15,	// Exists only in recommendation page
+		UserObject = 16,				// User profile information
+
+		ExtentedObject = 63		// Used for more high level object types
 	};
 
 	CProximaFlake(uint64_t Number) 
