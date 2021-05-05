@@ -27,14 +27,7 @@ if (MSVC)
     add_definitions(/D _CRT_SECURE_NO_WARNINGS)
 endif()
 
-git_clone(
-    PROJECT_NAME    simdjson
-    GIT_URL         https://github.com/suirless/simdjson.git
-    GIT_BRANCH      main
-    DIRECTORY       ${CMAKE_CURRENT_SOURCE_DIR}/deps
-)
-
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/deps/simdjson)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/simdjson)
 
 if (USE_VCPKG OR UNIX AND APPLE)
     find_package(ZLIB REQUIRED)
@@ -61,15 +54,8 @@ else()
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/deps/libpng)
 endif()
 
-git_clone(
-    PROJECT_NAME    zipper
-    GIT_URL         https://github.com/suirless/zipper.git
-    GIT_BRANCH      master
-    DIRECTORY       ${CMAKE_CURRENT_SOURCE_DIR}/deps
-)
-
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/deps/zipper)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/zipper/zipper)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/zipper)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/zipper/zipper)
 
 file(GLOB XPACKAGE_BASE_SRC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.h

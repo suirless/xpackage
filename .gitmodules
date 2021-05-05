@@ -1,0 +1,6 @@
+[submodule "simdjson"]
+	path = simdjson
+	url = https://github.com/suirless/simdjson
+[submodule "zipper"]
+	path = zipper
+	url = https://github.com/suirless/zipper
