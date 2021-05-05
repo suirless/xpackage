@@ -1,5 +1,5 @@
 #*********************************************************************
-# Copyright (C) Suirless, 2018-2020. All rights reserved.
+# Copyright (C) Suirless, 2018-2021. All rights reserved.
 # XPackage - package system for X-Project
 # EULA License
 #****************************************************************/
@@ -21,7 +21,7 @@ set(XPACKAGE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(XPACKAGE_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 set(SIMDJSON_JUST_LIBRARY ON)
 
-option(XPACKAGE_ENABLE_TESTS "Enable tests for XPackage" ON)
+option(XPACKAGE_ENABLE_TESTS "Enable tests for XPackage" OFF)
 
 if (MSVC)
     add_definitions(/D _CRT_SECURE_NO_WARNINGS)
@@ -32,6 +32,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/simdjson)
 if (USE_VCPKG OR UNIX)
     find_package(ZLIB REQUIRED)
     find_package(PNG REQUIRED)
+    set(BUILD_WITH_PACKAGES ON)
 else()
     git_clone(
         PROJECT_NAME    zlib
@@ -52,6 +53,7 @@ else()
     set(ZLIB_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/deps/zlib)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/deps/zlib)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/deps/libpng)
+    set(BUILD_WITH_PACKAGES OFF)
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/zipper)
@@ -87,7 +89,12 @@ file(GLOB XPACKAGE_SRC
 add_library(xpackage STATIC ${XPACKAGE_SRC})
 target_include_directories(xpackage PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/deps/simdjson)
 target_include_directories(xpackage PUBLIC ${XPACKAGE_INCLUDE_DIR})
-target_link_libraries(xpackage PUBLIC png_static zlib simdjson staticZipper)
+
+if (BUILD_WITH_PACKAGES)
+	target_link_libraries(xpackage PUBLIC PNG::PNG ZLIB::ZLIB simdjson staticZipper)
+else()
+	target_link_libraries(xpackage PUBLIC png_static zlib simdjson staticZipper)
+endif()
 
 if (XPACKAGE_ENABLE_TESTS)
     add_executable(xpackage-test ${CMAKE_CURRENT_SOURCE_DIR}/src/test/main.cpp)

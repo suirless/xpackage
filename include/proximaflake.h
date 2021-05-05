@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstdint>
+#include <cstring>
 #include <chrono>
 #include <vector>
 #include <thread>
@@ -82,7 +83,7 @@ public:
 
 	CProximaFlake(uint64_t Number) 
 	{
-		memcpy(&rawData, &Number, sizeof(uint64_t));
+		std::memcpy(&rawData, &Number, sizeof(uint64_t));
 	}
 
 	CProximaFlake(ProximaFlakeData NewData)
@@ -93,13 +94,13 @@ public:
 	CProximaFlake(const char* String)
 	{
 		uint64_t Number = std::stoull(String);
-		memcpy(&rawData, &Number, sizeof(uint64_t));
+		std::memcpy(&rawData, &Number, sizeof(uint64_t));
 	}
 
 	CProximaFlake(std::string String) 
 	{
 		uint64_t Number = std::stoull(String);
-		memcpy(&rawData, &Number, sizeof(uint64_t));
+		std::memcpy(&rawData, &Number, sizeof(uint64_t));
 	}
 
 	static CProximaFlake GenerateSnowFlake(uint64_t MachineId, uint64_t ObjectType, uint64_t Sequence)
