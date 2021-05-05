@@ -29,7 +29,7 @@ endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/simdjson)
 
-if (USE_VCPKG OR UNIX AND APPLE)
+if (USE_VCPKG OR UNIX)
     find_package(ZLIB REQUIRED)
     find_package(PNG REQUIRED)
 else()
