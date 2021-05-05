@@ -1,5 +1,5 @@
 /*****************************************************************
-* Copyright (C) Suirless, 2020. All rights reserved.
+* Copyright (C) Suirless, 2020-2021. All rights reserved.
 * Proxima module for X-Project
 * EULA License
 ******************************************************************
@@ -72,6 +72,11 @@ public:
 		IndexPageObject = 19,
 		RecommendationPageObject = 20,
 
+		SettingsObject = 21,
+		UserTableObject = 22,
+		TelegramTableObject = 23,
+		MailTableObject = 24,
+
 		ExtentedObject = 63		// Used for more high level object types
 	};
 
@@ -83,6 +88,12 @@ public:
 	CProximaFlake(ProximaFlakeData NewData)
 	{
 		rawData = NewData;
+	}
+
+	CProximaFlake(const char* String)
+	{
+		uint64_t Number = std::stoull(String);
+		memcpy(&rawData, &Number, sizeof(uint64_t));
 	}
 
 	CProximaFlake(std::string String) 
@@ -99,6 +110,11 @@ public:
 		newData.Sequence = Sequence;
 		newData.Timestamp = GetTimeSinceEpoch() / 10;
 		return CProximaFlake(newData);
+	}
+
+	std::chrono::milliseconds GetTimepoint()
+	{
+		return std::chrono::milliseconds(rawData.Timestamp * 10);
 	}
 
 	ObjectType GetObjectType()
