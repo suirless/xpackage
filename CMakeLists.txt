@@ -6,7 +6,6 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(XPackage C CXX)
-include(GitUtils.cmake)
 
 set(TBB_BUILD_TESTS OFF)
 set(TBB_INSTALL_TARGETS OFF)
@@ -34,25 +33,11 @@ if (USE_VCPKG OR UNIX)
     find_package(PNG REQUIRED)
     set(BUILD_WITH_PACKAGES ON)
 else()
-    git_clone(
-        PROJECT_NAME    zlib
-        GIT_URL         https://github.com/suirless/zlib.git
-        GIT_BRANCH      master
-        DIRECTORY       ${CMAKE_CURRENT_SOURCE_DIR}/deps
-    )
-
-    git_clone(
-        PROJECT_NAME    libpng
-        GIT_URL         https://github.com/suirless/libpng.git
-        GIT_BRANCH      libpng16
-        DIRECTORY       ${CMAKE_CURRENT_SOURCE_DIR}/deps
-    )
-
-    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deps/zlib)
-    set(ZLIB_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/zlib)
-    set(ZLIB_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/deps/zlib)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/deps/zlib)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/deps/libpng)
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/zlib)
+    set(ZLIB_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/zlib)
+    set(ZLIB_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/zlib)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/zlib)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/libpng)
     set(BUILD_WITH_PACKAGES OFF)
 endif()
 
@@ -87,7 +72,7 @@ file(GLOB XPACKAGE_SRC
 )
 
 add_library(xpackage STATIC ${XPACKAGE_SRC})
-target_include_directories(xpackage PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/deps/simdjson)
+target_include_directories(xpackage PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/simdjson)
 target_include_directories(xpackage PUBLIC ${XPACKAGE_INCLUDE_DIR})
 
 if (BUILD_WITH_PACKAGES)
