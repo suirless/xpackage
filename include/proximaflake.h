@@ -30,6 +30,8 @@ struct ProximaFlakeData
 };
 
 constexpr size_t FlakeSize = sizeof(ProximaFlakeData);
+constexpr size_t ProximaEpoch = 162081220000;
+
 class CProximaFlake
 {
 private:
@@ -109,13 +111,13 @@ public:
 		newData.MachineId = MachineId;
 		newData.ObjectType = ObjectType;
 		newData.Sequence = Sequence;
-		newData.Timestamp = GetTimeSinceEpoch() / 10;
+		newData.Timestamp = (GetTimeSinceEpoch() / 10) - ProximaEpoch;
 		return CProximaFlake(newData);
 	}
 
 	std::chrono::milliseconds GetTimepoint()
 	{
-		return std::chrono::milliseconds(rawData.Timestamp * 10);
+		return std::chrono::milliseconds((rawData.Timestamp + ProximaEpoch) * 10);
 	}
 
 	ObjectType GetObjectType()
