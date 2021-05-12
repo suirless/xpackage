@@ -1,7 +1,7 @@
 /*********************************************************
 * Copyright (C) Suirless, 2020. All rights reserved.
 * XPackage - package system for X-Project
-* License: EULA
+* Apache-2 License
 **********************************************************
 * Module Name: base include header for xpackage manager
 *********************************************************/

@@ -1,7 +1,7 @@
 #*********************************************************************
 # Copyright (C) Suirless, 2018-2021. All rights reserved.
 # XPackage - package system for X-Project
-# EULA License
+# Apache-2 License
 #****************************************************************/
 
 cmake_minimum_required(VERSION 3.16)
